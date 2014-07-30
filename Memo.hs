@@ -1,12 +1,16 @@
 import qualified Data.IntMap as IM
 import qualified Data.Array.IArray as A
 
+-- Naive solution.
 f :: (Int -> Int) -> Int -> Int
 f _ 0 = 0
 f memo n = max n $ memo (n `div` 2) +
                        memo (n `div` 3) + 
                        memo (n `div` 4)
 
+-- Inefficient solutions, as bad as the naive one.
+-- The data structures are likely not shared in the
+-- course of the mutual recursion.
 memoList :: Int -> Int
 memoList n = map (f memoList) [0..] !! n
 
@@ -23,7 +27,8 @@ memoArr to = (A.!) vals
       vals = A.array (0, to) [(i, f (memoArr to) i) | i <- [0..to]]
 
 
-
+-- Ugly, hand-crafted solution. Works as expected.
+-- Could be solved with an applicative functor.
 f' :: IM.IntMap Int -> Int -> (Int, IM.IntMap Int)
 f' m 0 = (0,m)
 f' m n = (res, mOut)
@@ -37,7 +42,6 @@ f' m n = (res, mOut)
          checkMemo mp i = case IM.lookup i mp of
                              Nothing -> f' mp i
                              Just e -> (e, mp)
-
 
 fMemoList = f memoList
 fMemoMap n = f (memoMap (n `div` 2)) n
