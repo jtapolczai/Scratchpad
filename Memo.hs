@@ -1,25 +1,26 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RebindableSyntax #-}
 
 module Memo where
 
 import Prelude hiding (return, (>>=))
 
 --import Control.Applicative (Applicative(..))
---import Control.Arrow (first)
+import Control.Arrow
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 
 --newtype Memo m k v = Memo{runMemo:: m k v -> (v, m k v)}
 
 -- |A generic wrapper for keys which should be memoized with trees.
-newtype TreeKey k = TreeKey{fromTreeKey::k} deriving (Show, Eq, Ord, Read)
+newtype TreeKey k = TreeKey{fromTreeKey::k} deriving (Show, Eq, Ord)
 
 -- |A generic wrapper for keys which should be memoized with (ascendingly
 --  sorted) lists of key-value pairs.
-newtype AscListKey k = AscListKey{fromAscListKey::k} deriving (Show, Eq, Ord, Read)
+newtype AscListKey k = AscListKey{fromAscListKey::k} deriving (Show, Eq, Ord)
 
-newtype PairList k v = PL{fromPL::[(k,v)]} deriving (Show, Eq, Ord, Read)
+newtype PairList k v = PL{fromPL::[(k,v)]} deriving (Show, Eq, Ord)
 
 -- |The class of memoizable structures.
 class Ord k => MemoKey k where
@@ -90,10 +91,10 @@ instance (MemoKey k, Ord k) => Endomonad (Memo k) where
 
 fMemo :: Int -> Memo Int Int
 fMemo 0 = return 0
-fMemo n = n2 >>= (\x -> n3 >>= (\y -> n4 >>= (\z -> return $! max n (x+y+z))))
-   where n2 = compute' (n `div` 2) fMemo
-         n3 = compute' (n `div` 3) fMemo
-         n4 = compute' (n `div` 4) fMemo
+fMemo n = do x <- compute' (n `div` 2) fMemo
+             y <- compute' (n `div` 3) fMemo
+             z <- compute' (n `div` 4) fMemo
+             return $! max n (x+y+z)
 
 -- Ugly, hand-crafted solution. Works as expected.
 -- Could be solved with an applicative functor.
