@@ -79,11 +79,11 @@ instance Ord k => MemoKey (TreeKey k) where
    emptyMemo = TMS M.empty
 
 
-class MonoMonad m where
+class Endomonad m where
    return :: a -> m a
    (>>=) :: m a -> (a -> m a) -> m a
 
-instance (MemoKey k, Ord k) => MonoMonad (Memo k) where
+instance (MemoKey k, Ord k) => Endomonad (Memo k) where
    return x = makeMemo $ \m -> (x,m)
    f >>= g = makeMemo $ \m -> let (v,m') = runMemo f m in
                               runMemo (g v) m'
@@ -94,7 +94,6 @@ fMemo n = n2 >>= (\x -> n3 >>= (\y -> n4 >>= (\z -> return $! max n (x+y+z))))
    where n2 = compute' (n `div` 2) fMemo
          n3 = compute' (n `div` 3) fMemo
          n4 = compute' (n `div` 4) fMemo
-
 
 -- Ugly, hand-crafted solution. Works as expected.
 -- Could be solved with an applicative functor.
