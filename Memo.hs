@@ -5,9 +5,6 @@
 module Memo where
 
 import Prelude hiding (return, (>>=))
-
---import Control.Applicative (Applicative(..))
-import Control.Arrow
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 
