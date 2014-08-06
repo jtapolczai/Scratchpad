@@ -8,6 +8,7 @@ import Data.Maybe
 import Data.String.Utils (startswith)
 import Data.List.Split (splitOn)
 import Control.Monad
+import System.Directory
 import Prelude hiding (pred)
 
 type Filename = String
@@ -127,3 +128,9 @@ replaceIO r xml out =
                                                $ toTree
                                                $ performReplacements cur re')
                                 return $! Right ()
+
+
+repairSessions :: Filename -> IO ()
+repairSessions r = getDirectoryContents "."
+                   >>= filterM doesFileExist
+                   >>= mapM_ (\f -> replaceIO r f ("repaired/" ++ f) >> putStrLn (f ++ " finished!")) 
