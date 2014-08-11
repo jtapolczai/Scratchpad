@@ -11,48 +11,65 @@ module Base64 (
    Byte,
    Decoder,
    Encoder,
+
+   decodeBase64Fragments,
+   dec
    ) where
 
 import Data.Word
 import Data.Bits (shift, (.|.), (.&.))
 import Data.Char (ord, chr)
 import Control.Monad ((>=>))
+import Data.List
+import Data.Maybe
+import Data.String.Utils
+import Control.Monad.Loops
 
 type Base64 = String
 type Byte = Word8
-type Decoder = Char -> Maybe Byte
+type Decoder = Char -> Either String Byte
 type Encoder = Byte -> Char
+type BlockConverter a b = (Int, [a] -> Maybe String, [a] -> Either String [b])
+
+blockConvert :: BlockConverter a b -> [a] -> Either String [b]
+blockConvert _ [] = Right []
+blockConvert bc@(blocksize, endErr, f) xs
+   | length (take blocksize xs) < blocksize = Left "invalid block size"
+   | otherwise = do let end = null $ drop blocksize xs
+                        err = endErr xs
+                    
+                    if end && isJust err then
+                       Left (fromJust err)
+                    else do block <- f $ take blocksize xs
+                            rest <- blockConvert bc (drop blocksize xs)
+                            Right $! block ++ rest
 
 convert :: (Enum a, Enum b) => [a] -> [b]
 convert = map (toEnum . fromEnum)
 
-decodeTextURL :: String -> Maybe String
+decodeTextURL :: String -> Either String String
 decodeTextURL = decode64 toByteURL >=> (return . convert)
 
 encodeTextURL :: String -> Base64
 encodeTextURL = encode64 fromByteURL . convert
 
-decode64 :: Decoder -> String -> Maybe [Byte]
-decode64 _ [] = return []
-decode64 d cs@(_:_:'=':'=':[]) = decode' d 1 (take 2 cs) []
-decode64 d cs@(_:_:_  :'=':[]) = decode' d 2 (take 3 cs) []
-decode64 d cs@(_:_:_  :_  :[]) = decode' d 3 (take 4 cs) []
-decode64 d cs@(_:_:_  :_  :re) = decode' d 3 (take 4 cs) re
+decode64 :: Decoder -> String -> Either String [Byte]
+decode64 decoder = blockConvert (4,filler, decode')
+   where 
+      filler xs =
+         if length (nub $ dropWhile ('='/=) xs) > 1 then Just "'=' character occurred before the end of the base64 string!"
+         else Nothing
 
-decode' :: Decoder -> Int -> String -> String -> Maybe [Byte]
-decode' decoder n cs re =
-   do conv <- mapM decoder cs
+      decode' :: String -> Either String [Byte]
+      decode' xs =
+         do conv <- mapM decoder xs
 
-          -- The three result bytes
-      let b1 = shift (head conv) 2 .|. shift (conv !! 1) (-4)
-          b2 = shift (conv !! 1) 4 .|. shift (conv !! 2) (-2)
-          b3 = shift (conv !! 2) 6 .|.       (conv !! 3)
+            let b1 = shift (head conv) 2 .|. shift (conv !! 1) (-4)
+                b2 = shift (conv !! 1) 4 .|. shift (conv !! 2) (-2)
+                b3 = shift (conv !! 2) 6 .|.       (conv !! 3)
+                block = take (length $ takeWhile ('='/=) xs) [b1,b2,b3]
 
-          block = take n [b1,b2,b3]
-
-      rest <- decode64 decoder re
-      return $! block ++ rest
-
+            return $! block
 
 encode64 :: Encoder-> [Byte] -> Base64
 encode64 _ [] = []
@@ -71,20 +88,20 @@ encode' encoder n (b1:b2:b3:[]) re = block ++ encode64 encoder re
       block = map encoder (take n [c1,c2,c3,c4]) ++ replicate (4-n) '='
 
 toByte :: Decoder
-toByte c | c `between` ('A','Z') = Just $ fromIntegral $ ord c - ord 'A'
-         | c `between` ('a','z') = Just $ fromIntegral $ 26 + ord c - ord 'a'
-         | c `between` ('0','9') = Just $ fromIntegral $ 52 + ord c - ord '0'
-         | c == '+'        = Just 62
-         | c == '/'        = Just 63
-         | otherwise       = Nothing
+toByte c | c `between` ('A','Z') = Right $ fromIntegral $ ord c - ord 'A'
+         | c `between` ('a','z') = Right $ fromIntegral $ 26 + ord c - ord 'a'
+         | c `between` ('0','9') = Right $ fromIntegral $ 52 + ord c - ord '0'
+         | c == '+'        = Right 62
+         | c == '/'        = Right 63
+         | otherwise       = Left $ "Illegal character '" ++ c : "'!"
 
 toByteURL :: Decoder
-toByteURL c | c `between` ('A','Z') = Just $ fromIntegral $ ord c - ord 'A'
-            | c `between` ('a','z') = Just $ fromIntegral $ 26 + ord c - ord 'a'
-            | c `between` ('0','9') = Just $ fromIntegral $ 52 + ord c - ord '0'
-            | c == '-'        = Just 62
-            | c == '_'        = Just 63
-            | otherwise       = Nothing
+toByteURL c | c `between` ('A','Z') = Right $ fromIntegral $ ord c - ord 'A'
+            | c `between` ('a','z') = Right $ fromIntegral $ 26 + ord c - ord 'a'
+            | c `between` ('0','9') = Right $ fromIntegral $ 52 + ord c - ord '0'
+            | c == '-'        = Right 62
+            | c == '_'        = Right 63
+            | otherwise       = Left $ "Illegal character '" ++ c : "'!"
 
 fromByte :: Encoder
 fromByte b | b `between` (0,25)  = chr $ ord 'A' + fromIntegral b
@@ -102,3 +119,33 @@ fromByteURL b | b `between` (0,25)  = chr $ ord 'A' + fromIntegral b
 
 between :: Ord a => a -> (a,a) -> Bool
 between x (lower, upper) = lower <= x && x <= upper
+
+-- |Finds all strings 
+decodeBase64Fragments :: String -> [String]
+decodeBase64Fragments =
+   map (\(Right x) -> x)
+   . filter isRight
+   . map (decodeTextURL . takeWhile isBase64)
+   . filter (startswith http)
+   . tails
+
+   where http = encodeTextURL "http:/"
+         isBase64 '=' = True
+         isBase64 x = isRight $ toByteURL x
+
+isRight (Right _) = True
+isRight _ = False
+
+-- |State-of-the-art decoder.
+dec :: IO String
+dec = iterateWhile (/="exit") body
+   where
+      body = do putStrLn "Enter line (\"exit\" to quit): "
+                line <- getLine
+                putStrLn "Found links: "
+                mapM_ putStrLn
+                 $ decodeBase64Fragments
+                 $ replace "theed" ""
+                 $ replace "theedoa" ""
+                 $ replace "Xthee" "L3" line
+                return line
