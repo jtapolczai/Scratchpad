@@ -29,20 +29,19 @@ type Base64 = String
 type Byte = Word8
 type Decoder = Char -> Either String Byte
 type Encoder = Byte -> Char
-type BlockConverter a b = (Int, [a] -> Maybe String, [a] -> Either String [b])
+data BlockConverter a b = BC Int
+                             [a] -> Maybe String
+                             [a] -> Either String [b]
+                             [a] -> Either String [b]
 
 blockConvert :: BlockConverter a b -> [a] -> Either String [b]
-blockConvert _ [] = Right []
-blockConvert bc@(blocksize, endErr, f) xs
-   | length (take blocksize xs) < blocksize = Left "invalid block size"
-   | otherwise = do let end = null $ drop blocksize xs
-                        err = endErr xs
-                    
-                    if end && isJust err then
-                       Left (fromJust err)
-                    else do block <- f $ take blocksize xs
-                            rest <- blockConvert bc (drop blocksize xs)
-                            Right $! block ++ rest
+blockConvert (BC size endErr f fEnd) xs =
+   do let chk = chunksOf size xs
+          err = endErr $ last chk
+      initRes <- mapM f (init chk)
+      lastRes <- if isJust err then Left $! fromJust err
+                               else fEnd (last chk)
+      return $! initres ++ [lastRes]
 
 convert :: (Enum a, Enum b) => [a] -> [b]
 convert = map (toEnum . fromEnum)
