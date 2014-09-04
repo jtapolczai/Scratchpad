@@ -7,6 +7,7 @@ module Memo where
 import Prelude hiding (return, (>>=))
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
+import qualified Prelude as P (return, (>>=))
 
 --newtype Memo m k v = Memo{runMemo:: m k v -> (v, m k v)}
 
@@ -118,3 +119,44 @@ fNoMemo 0 = 0
 fNoMemo n = max n $ fNoMemo (n `div` 2) +
                     fNoMemo (n `div` 3) +
                     fNoMemo (n `div` 4)
+
+
+
+data Mem m v = Mem (m -> (v,m))
+
+instance Monad (Mem m) where
+   return x      = Mem $ \m -> (x,m)
+   (Mem f) >>= g = Mem $ \m -> let (v,m') = f m
+                                   Mem g' = g v
+                               in g' m'
+
+isMemo :: Ord k => k -> Mem (M.Map k v) Bool
+isMemo k = Mem $ \m -> (k `M.member` m,m)
+
+getMemo :: Ord k => k -> Mem (M.Map k v) (Maybe v)
+getMemo k = Mem $ \m -> (k `M.lookup` m, m)
+
+putMemo :: Ord k => k -> v -> Mem (M.Map k v) ()
+putMemo k v = Mem $ \m -> ((), M.insert k v m)
+
+memo :: Ord k => k -> Mem (M.Map k v) v -> Mem (M.Map k v) v
+memo k expV = Mem $ \m -> case ins comb k bot m of
+                             (Just cheapV, _) -> (cheapV,m)
+                             (Nothing, m') -> (expV, m')
+   where ins = M.insertLookupWithKey
+         comb _ _ _ = expV
+         bot = undefined
+
+memo' :: k -> (k -> Mem (M.Map k k) k) -> Mem (M.Map k k) k
+memo' k f = memo (f k) k
+
+memoized :: Mem (M.Map k v) v -> v
+memoized (Mem f) = snd $ f M.empty
+
+fNewMemo :: Int -> Int
+fNewMemo n = memoized (fm n)
+   where fm 0 = return 0
+         fm n = do x <- memo' fm (n `div` 2)
+                   y <- memo' fm (n `div` 3)
+                   z <- memo' fm (n `div` 4)
+                   return $! max n (x+y+z)
