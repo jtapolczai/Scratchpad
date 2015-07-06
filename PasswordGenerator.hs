@@ -14,9 +14,8 @@ import System.IO
 import System.Random
 
 cNUM_PASSWORDS = 1
-cNUM_WORDS = 3
-cPASSWORD_FILE = "en.txt"
-
+cNUM_WORDS = 32
+cPASSWORD_FILE = "alphanumSymbol.txt"
 
 -- |Uniformly and randomly chooses a value between 0 and n (inclusive).
 choose :: Int -> IO Int
@@ -30,7 +29,7 @@ chooseItem m = flip M.lookup m <$> choose (M.size m - 1)
 --  The keys will be the line numbers. If the file can't be read, an error is printed
 --  to stderr and an empty map is returned.
 readPasswordFile :: String -> IO (M.Map Int String)
-readPasswordFile f = (M.fromList . zip [0..] . lines <$> readFile f) `catch` h
+readPasswordFile f = (M.fromList . zip [0..] . filter (not.null) . lines <$> readFile f) `catch` h
    where
       h :: IOException -> IO (M.Map Int String)
       h _ = hPutStrLn stderr ("Can't open password file " ++ f ++ "!") >> return M.empty
