@@ -13,8 +13,8 @@ import Data.Maybe (catMaybes)
 import System.IO
 import System.Random
 
-cNUM_PASSWORDS = 1
-cNUM_WORDS = 32
+cNUM_PASSWORDS = 1000
+cNUM_WORDS = 180
 cPASSWORD_FILE = "alphanumSymbol.txt"
 
 -- |Uniformly and randomly chooses a value between 0 and n (inclusive).
@@ -37,7 +37,7 @@ readPasswordFile f = (M.fromList . zip [0..] . filter (not.null) . lines <$> rea
 -- |Randomly selects n elements from a map and concatenates them. Each word will be
 --  capitalised.
 generatePassword :: Int -> M.Map Int String -> IO String
-generatePassword num = return . concat . map capitalise . catMaybes <=< sequence . replicate num . chooseItem
+generatePassword num = return . concat . catMaybes <=< sequence . replicate num . chooseItem
 
 -- |Capitalises the first letter of a string.
 capitalise :: String -> String
