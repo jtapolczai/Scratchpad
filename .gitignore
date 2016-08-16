@@ -16,6 +16,7 @@ local.properties
 .settings/
 .loadpath
 .cabal-sandbox/
+.stack-work/
 cabal.sandbox.config
 
 # External tool builders
