@@ -1,0 +1,60 @@
+name:                scratchpad
+version:             0.1.0.0
+synopsis:            A converter for units.
+description:         A converter for units.
+homepage:            https://github.com/jtapolczai/scratchpad#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Janos Tapolczai
+maintainer:          janos.tapolczai@gmail.com
+copyright:           2016 Janos Tapolczai
+category:            Web
+build-type:          Simple
+-- extra-source-files:
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Converter
+                     , Converter.Data
+                     , Converter.TH
+                     , Converter.Types
+  build-depends:       base >= 4.7 && < 5
+                     , bimap >= 0.3 && < 0.5
+                     , classy-prelude >= 0.12
+                     , containers >= 0.5 && <0.7
+                     , lens >= 4 && <5
+                     , parsec >= 3 && <4
+                     , template-haskell >= 2.11 && <3
+                     , text >= 1.2.1 && < 1.4
+  default-language:    Haskell2010
+  ghc-options:         -W
+  default-extensions:  FlexibleInstances
+                     , FunctionalDependencies
+                     , MultiParamTypeClasses
+                     , NoImplicitPrelude
+                     , OverloadedStrings
+                     , ScopedTypeVariables
+                     , TemplateHaskell
+
+executable scratchpad-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , scratchpad
+                     , ansi-terminal >= 0.6 && <0.9
+                     , classy-prelude >= 0.12
+  default-language:    Haskell2010
+  ghc-options:         -W
+  default-extensions:  FlexibleInstances
+                     , FunctionalDependencies
+                     , MultiParamTypeClasses
+                     , NoImplicitPrelude
+                     , OverloadedStrings
+                     , ScopedTypeVariables
+                     , TemplateHaskell
+
+source-repository head
+  type:     git
+  location: https://github.com/jtapolczai/scratchpad
