@@ -1,7 +1,7 @@
 module ItemSorter where
 
 import Control.Arrow (right)
-import Data.List (sortBy)
+import Data.List (sortBy, partition)
 import Data.Ord (comparing)
 import qualified Data.Time as T
 import qualified Text.Parsec as P
@@ -25,6 +25,7 @@ data Item = Item {
 }
 
 data ContainerType = Bag | Bar | Can | Jar | Pack
+   deriving (Show, Eq, Ord, Enum, Bounded)
 
 -- Date
 -------------------------------------------------------------------------------
@@ -123,7 +124,36 @@ readItems = P.many readItem
 -------------------------------------------------------------------------------
 
 -- |Reads an item list from a file and returns it, sorted by expiration date.
-readLines :: FilePath -> IO (Either P.ParseError [Item])
-readLines fp = (right sort) . P.parse readItems fp <$> readFile fp
+readItemList :: FilePath -> IO (Either P.ParseError [Item])
+readItemList fp = (right sort) . P.parse readItems fp <$> readFile fp
    where
       sort = sortBy (comparing _itemExpiration)
+
+-- |Splits an item list by expiration date. The first part contains the
+--  not-yet-expired items, the second part contains the expired ones.
+partitionByDate :: Date -> [Item] -> ([Item], [Item])
+partitionByDate today = partition f
+   where
+      f x = _itemExpiration x >= today
+
+showItem :: Item -> String
+showItem (Item name contype qty expiration) = mconcat
+   [show qty, " ", name, " (", show contype, "): ", showDate expiration]
+
+showDate :: Date -> String
+showDate (Date y m d) = mconcat [show d, ".", show m, ".", show y]
+
+main :: IO ()
+main = do
+   today <- mkCurrentDate
+   items <- readItemList "food.csv"
+   case items of
+      Left err -> print err
+      Right items' -> do
+         let (good, expired) = partitionByDate today items'
+         putStrLn "Expired: "
+         putStrLn "------------------------------"
+         mapM_ (putStrLn . showItem) expired
+         putStrLn "Good: "
+         putStrLn "------------------------------"
+         mapM_ (putStrLn . showItem) good
