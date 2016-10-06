@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module ItemSorter where
 
 import Control.Arrow (right)
@@ -142,32 +144,75 @@ padLeft len x xs = padding ++ xs
    where
       padding = replicate (len - length xs) x
 
--- App state
+-- Database access
 -------------------------------------------------------------------------------
 
-db :: FilePath
-db = "food.csv"
+class Database db where
+   type DBItems db :: *
+   type DBItem db :: *
+   type Id db :: *
+   -- |Loads the database.
+   loadItems :: db -> IO db
+   -- |Writes the database back to file.
+   persistItems :: db -> IO ()
+   -- |Filters the database.
+   selectItems :: (DBItem db -> Bool) -> db -> DBItems db
+   -- |Gets a single item.
+   getItem :: Id db -> db -> Maybe (DBItem db)
+   -- |Deletes an item from the database.
+   deleteItem :: db -> Id db -> db
+   -- |Adds an item to the database.
+   addItem :: db -> Id db -> DBItem db -> db
+   -- |Updates an item in the datavase.
+   updateItem :: db -> Id db -> DBItem db -> db
 
-persistAppState :: AppState -> IO ()
-persistAppState as = do
-   out <- openFile db WriteMode
-   mapM_ (hPutStrLn out) . map itemAsCSV . M.toList . _appStateItems $ as
+-- |A CSV database.
+data CSVDB = CSVDB String (M.Map ID Item)
 
+instance Database CSVDB where
+   type DBItems CSVDB = M.Map ID Item
+   type DBItem CSVDB = Item
+   type Id CSVDB = Int
+
+   loadItems (CSVDB fp db) = do
+      items <- readItemList fp
+      return $ case items of
+         Left _ -> CSVDB fp db
+         Right db' -> CSVDB fp db'
+
+   persistItems (CSVDB fp db) = do
+      out <- openFile fp WriteMode
+      mapM_ (hPutStrLn out) . map itemAsCSV . M.toList $ db
+
+   selectItems f (CSVDB _ db) = M.filter f db
+   getItem id (CSVDB _ db) = M.lookup id db
+   deleteItem (CSVDB fp db) id = CSVDB fp (M.delete id db)
+   addItem (CSVDB fp db) id item = CSVDB fp (M.insert id item db)
+   updateItem (CSVDB fp db) id item = CSVDB fp (M.adjust (const item) id db)
+
+
+-- |Reads an item list from a file and returns the items in a map.
+readItemList :: FilePath -> IO (Either P.ParseError (M.Map ID Item))
+readItemList fp = P.parse readItems fp <$> readFile fp
+
+-- |Outputs an item and an ID as a line in a CSV-file.
 itemAsCSV :: (Int, Item) -> String
 itemAsCSV (id, Item name contype qty exp) = mconcat
    [show id,";",show qty,";",showCT contype,";", name, showDate exp]
    where
       showCT = map toLower . show
 
+-- App state
+-------------------------------------------------------------------------------
+
+db :: FilePath
+db = "food.csv"
+
 getAppState :: IO (Either P.ParseError AppState)
 getAppState = right AppState <$> readItemList db
 
 -- Main program
 -------------------------------------------------------------------------------
-
--- |Reads an item list from a file and returns the items in a map.
-readItemList :: FilePath -> IO (Either P.ParseError (M.Map ID Item))
-readItemList fp = P.parse readItems fp <$> readFile fp
 
 -- |Splits an item list by expiration date. The first part contains the
 --  not-yet-expired items, the second part contains the expired ones.
