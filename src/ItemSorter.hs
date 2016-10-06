@@ -167,9 +167,10 @@ class Database db where
    -- |Deletes an item from the database.
    deleteItem :: db -> Id db -> db
    -- |Adds an item to the database.
-   addItem :: db -> Id db -> DBItem db -> db
+   addItem :: db -> DBItem db -> (db, Id db)
    -- |Updates an item in the datavase.
-   updateItem :: db -> Id db -> DBItem db -> db
+   updateItem :: db -> Id db -> (DBItem db -> DBItem db) -> db
+
 
 -- |A CSV database.
 data CSVDB = CSVDB String (M.Map ID Item)
@@ -192,8 +193,10 @@ instance Database CSVDB where
    selectItems f (CSVDB _ db) = M.filter f db
    getItem id (CSVDB _ db) = M.lookup id db
    deleteItem (CSVDB fp db) id = CSVDB fp (M.delete id db)
-   addItem (CSVDB fp db) id item = CSVDB fp (M.insert id item db)
-   updateItem (CSVDB fp db) id item = CSVDB fp (M.adjust (const item) id db)
+   addItem (CSVDB fp db) item = (CSVDB fp (M.insert newId item db), newId)
+      where
+         newId = if M.null db then 0 else (+1) . fst . M.findMax $ db
+   updateItem (CSVDB fp db) id f = CSVDB fp (M.adjust f id db)
 
 
 -- |Reads an item list from a file and returns the items in a map.
@@ -212,6 +215,18 @@ itemAsCSV (id, Item name contype qty exp) = mconcat
 
 getAppState :: IO AppState
 getAppState = AppState <$> loadItems (CSVDB "food.csv" M.empty)
+
+-- |Consume n units of an item.
+consumeItem :: (Database db, DBItem db ~ Item) => Int -> Id db -> db -> db
+consumeItem num id db = case getItem id db of
+   Nothing -> db
+   Just item ->
+      if num >= _itemQuantity item
+      then deleteItem db id
+      else updateItem db id reduceQty
+   where
+      reduceQty x@Item{_itemQuantity=qty} = x{_itemQuantity = qty - num}
+
 
 -- Main program
 -------------------------------------------------------------------------------
@@ -233,7 +248,7 @@ itemsByExpiration today = partitionByDate today . sortBy f . M.toList
 
 showItem :: Item -> String
 showItem (Item name contype qty expiration) = mconcat
-   [show qty, " ", name, " (", show contype, "): ", showDate expiration]
+   [show qty, " ", name, " (", map toLower . show $ contype, "): ", showDate expiration]
 
 showDate :: Date -> String
 showDate (Date y m d) = mconcat [show d, ".", show m, ".", show y]
