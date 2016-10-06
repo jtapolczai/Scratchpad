@@ -2,7 +2,9 @@
 
 module ItemSorter where
 
-import Control.Arrow (right)
+-- import Control.Arrow (right)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.State (evalStateT, get)
 import Data.Char (toLower)
 import qualified Data.Map as M
 import Data.List (sortBy, partition)
@@ -34,7 +36,7 @@ data ContainerType = Bag | Bar | Can | Jar | Pack
    deriving (Show, Eq, Ord, Enum, Bounded)
 
 data AppState = AppState {
-   _appStateItems :: M.Map ID Item
+   _appStateDB :: CSVDB
 }
 
 -- Date
@@ -157,6 +159,9 @@ class Database db where
    persistItems :: db -> IO ()
    -- |Filters the database.
    selectItems :: (DBItem db -> Bool) -> db -> DBItems db
+   -- |Gets all items.
+   getItems :: db -> DBItems db
+   getItems = selectItems (const True)
    -- |Gets a single item.
    getItem :: Id db -> db -> Maybe (DBItem db)
    -- |Deletes an item from the database.
@@ -205,11 +210,8 @@ itemAsCSV (id, Item name contype qty exp) = mconcat
 -- App state
 -------------------------------------------------------------------------------
 
-db :: FilePath
-db = "food.csv"
-
-getAppState :: IO (Either P.ParseError AppState)
-getAppState = right AppState <$> readItemList db
+getAppState :: IO AppState
+getAppState = AppState <$> loadItems (CSVDB "food.csv" M.empty)
 
 -- Main program
 -------------------------------------------------------------------------------
@@ -238,18 +240,17 @@ showDate (Date y m d) = mconcat [show d, ".", show m, ".", show y]
 
 main :: IO ()
 main = do
-   today <- mkCurrentDate
-   items <- readItemList "food.csv"
-   case items of
-      Left err -> print err
-      Right items' -> do
-         let (good, expired) = itemsByExpiration today items'
-             show' (id, item) = mconcat [padLeft 3 ' ' (show id),
-                                " - ",
-                                showItem item]
-         putStrLn "Expired: "
-         putStrLn "------------------------------"
-         mapM_ (putStrLn . show') expired
-         putStrLn "Good: "
-         putStrLn "------------------------------"
-         mapM_ (putStrLn . show') good
+   as <- getAppState
+   flip evalStateT as $ do
+      today <- liftIO mkCurrentDate
+      items <- getItems . _appStateDB <$> get
+      let (good, expired) = itemsByExpiration today items
+          show' (id, item) = mconcat [padLeft 3 ' ' (show id),
+                             " - ",
+                             showItem item]
+      liftIO $ putStrLn "Expired: "
+      liftIO $ putStrLn "------------------------------"
+      mapM_ (liftIO . putStrLn . show') expired
+      liftIO $ putStrLn "Good: "
+      liftIO $ putStrLn "------------------------------"
+      mapM_ (liftIO . putStrLn . show') good
