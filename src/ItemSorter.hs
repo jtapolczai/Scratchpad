@@ -50,6 +50,10 @@ mkVagueDate y (Just m) (Just d) = mkDate y m d
 mkVagueDate y (Just m) Nothing = mkDate y m (daysInMonth y m)
 mkVagueDate y Nothing Nothing = mkDate y 12 31
 
+-- |Creates the latest possibly date (9999.12.31).
+mkMaxDate :: Date
+mkMaxDate = Date 9999 31 12
+
 -- |Returns the current system date.
 mkCurrentDate :: IO Date
 mkCurrentDate = do
@@ -87,7 +91,7 @@ readItem = do
    P.char ';'
    name <- P.many1 (P.noneOf ";")
    P.char ';'
-   expiration <- readDate
+   expiration <- readDate P.<|> readIndefinite
    P.endOfLine
    return $ Item name contype qty expiration
 
@@ -102,8 +106,8 @@ readContainerType =
 readDate :: P.Parsec String () Date
 readDate = do
    comp1 <- decimal
-   comp2 <- P.optionMaybe readComp
-   comp3 <- P.optionMaybe readComp
+   comp2 <- P.try $ P.optionMaybe readComp
+   comp3 <- P.try $ P.optionMaybe readComp
    let ret = case (comp2, comp3) of
          (Just m, Just y) -> mkDate y m comp1
          (Just y, Nothing) -> mkVagueDate y (Just comp1) Nothing
@@ -113,6 +117,11 @@ readDate = do
       readComp :: P.Parsec String () Int
       readComp = do P.char '.'
                     decimal
+
+readIndefinite :: P.Parsec String () Date
+readIndefinite = do
+   P.string "indefinite"
+   return mkMaxDate
 
 decimal :: P.Parsec String () Int
 decimal = read <$> P.many1 P.digit
