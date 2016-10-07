@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings,
+             TypeFamilies #-}
 
 module ItemSorter where
 
@@ -12,6 +13,9 @@ import Data.Ord (comparing)
 import qualified Data.Time as T
 import qualified Text.Parsec as P
 import System.IO (openFile, hPutStrLn, IOMode(..))
+import System.REPL (defCommandTest,
+                    makeCommand,
+                    makeREPLSimple)
 
 -- Types
 -------------------------------------------------------------------------------
@@ -227,7 +231,6 @@ consumeItem num id db = case getItem id db of
    where
       reduceQty x@Item{_itemQuantity=qty} = x{_itemQuantity = qty - num}
 
-
 -- Main program
 -------------------------------------------------------------------------------
 
@@ -256,16 +259,60 @@ showDate (Date y m d) = mconcat [show d, ".", show m, ".", show y]
 main :: IO ()
 main = do
    as <- getAppState
-   flip evalStateT as $ do
-      today <- liftIO mkCurrentDate
-      items <- getItems . _appStateDB <$> get
-      let (good, expired) = itemsByExpiration today items
-          show' (id, item) = mconcat [padLeft 3 ' ' (show id),
-                             " - ",
-                             showItem item]
-      liftIO $ putStrLn "Expired: "
-      liftIO $ putStrLn "------------------------------"
-      mapM_ (liftIO . putStrLn . show') expired
-      liftIO $ putStrLn "Good: "
-      liftIO $ putStrLn "------------------------------"
-      mapM_ (liftIO . putStrLn . show') good
+   evalStateT repl as
+   where
+      repl = makeREPLSimple [cmdShow, cmdConsume, cmdAdd, cmdSave]
+
+      cmdShow = makeCommand
+         "show"
+         (defCommandTest ["show"])
+         "Shows the list of expired and still good items."
+         (\_ -> do
+            today <- liftIO mkCurrentDate
+            items <- getItems . _appStateDB <$> get
+            let (good, expired) = itemsByExpiration today items
+                show' (id, item) = mconcat [padLeft 3 ' ' (show id),
+                                   " - ",
+                                   showItem item]
+            liftIO $ putStrLn "Expired: "
+            liftIO $ putStrLn "------------------------------"
+            mapM_ (liftIO . putStrLn . show') expired
+            liftIO $ putStrLn "Good: "
+            liftIO $ putStrLn "------------------------------"
+            mapM_ (liftIO . putStrLn . show') good)
+
+      cmdConsume = makeCommand2
+         "consume"
+         (defCommandTest ["consume <ID> <num>"])
+         "Consumes <num> units of item <ID>"
+         True
+         posNumAsker "Item ID: "
+         posNumAsker "Number of consumed items: "
+         (\_ id num -> do
+            db <- _appStateDB <$> get
+            case getItem db id of
+               Nothing -> putStrLn ("There's no item with the ID " ++ show id)
+               Just item -> do
+                  liftIO $ putStr
+                         $ mconcat ["Eating ", show num, " of ", _itemName item, "... "]
+                  let db' = consume db' num id db
+                  put $ AppState db'
+                  case getItem db' id of
+                     Nothing -> liftIO $ putStrLn "none remain."
+                     Just item' ->
+                        liftIO $ putStrLn
+                               $ mconcat [show $ _itemQuantity item', " remain."])
+
+      cmdSave = makeCommand
+         "save"
+         (defCommandTest ["save"])
+         "Saves the database."
+         (\_ -> do
+            db <- _appStateDB <$> get
+            persistItems db)
+
+
+      posNumAsker pr = asker pr genericTypeError isPositive
+         where
+            isPositive = boolPredicate isPos (const $ genericPredicateError "Expected a natural number!")
+            isPos n = return (n >= 0)
