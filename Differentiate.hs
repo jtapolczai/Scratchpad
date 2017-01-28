@@ -2,6 +2,7 @@
 
 module Differentiate where
 
+import Data.List (foldl')
 import Data.Ratio
 import qualified Data.Set as S
 
@@ -141,8 +142,16 @@ d v f@(unaryExpr -> Just (_,g)) = f' :* d v g
 --  2. x+0, 0+x, 1*x, x*1 are turned into x.
 --  3. x*0, 0*x are turned into 0.
 simplify :: Expr -> Expr
-simplify = undefined
+simplify = go
    where
+      go :: Expr -> Expr
+      go (binaryExpr -> Just (n,(l,r))) = applyOpts $ n (simplify l) (simplify r)
+      go (unaryExpr -> Just (n,n')) = applyOpts $ n (simplify n')
+      go t = applyOpts t
+
+      -- Applies all optimizations to a node.
+      applyOpts x = foldl' (flip ($)) x optimizations
+
       optimizations = [makeLAssociative isAdd (:+),
                        makeLAssociative isMul (:*),
                        eliminateNeutralElems isAdd (isConst 0),
