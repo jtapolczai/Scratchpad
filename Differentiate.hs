@@ -140,10 +140,22 @@ d v f@(unaryExpr -> Just (_,g)) = f' :* d v g
 --  1. + and * are made left-associative.
 --  2. x+0, 0+x, 1*x, x*1 are turned into x.
 --  3. x*0, 0*x are turned into 0.
---  4. sin(0), cos(x/2) where x % (pi/2) == 0 are turned into 0.
---  5. cos()
 simplify :: Expr -> Expr
 simplify = undefined
+   where
+      optimizations = [makeLAssociative isAdd (:+),
+                       makeLAssociative isMul (:*),
+                       eliminateNeutralElems isAdd (isConst 0),
+                       eliminateNeutralElems isMul (isConst 1),
+                       eliminateZeroElems isMul (isConst 0)]
+
+      isAdd (_ :+ _) = True
+      isAdd _ = False
+
+      isMul (_ :* _) = True
+      isMul _ = False
+
+      isConst n m@(Const _) = n == m
 
 -- |Starts at the root of a tree and descends as long as the nodes or binary
 --  and fulfil a criterion. These nodes are put into left-associative order
@@ -168,6 +180,40 @@ makeLAssociative f node = mkTree . collectValues
       -- |Make a left-associative tree out of a list of nodes.
       mkTree [x,y] = node x y
       mkTree (x:ys) = node x (mkTree ys)
+
+-- |Eliminates neutral elements from a node's children. If the root's
+--  left or right child is a neutral element, the root is replaced by its
+--  other child. This optimization performs no recursion.
+eliminateNeutralElems
+   :: (Expr -> Bool) -- ^Criterion for the node. E.g. "is an addition".
+   -> (Expr -> Bool) -- ^Criterion for the neutral element. E.g. "is 0".
+   -> Expr
+   -> Expr
+eliminateNeutralElems nodeF neutralF t@(binaryExpr -> Just (_,(l,r))) =
+   if nodeF t then
+      if neutralF l then l
+      else if neutralF r then r
+      else t
+   else t
+eliminateNeutralElems _ _ t = t
+
+-- |Eliminates zero elements from a node's children. If the root's left or
+--  right child is a zero, the whole tree is replaced by zero.
+--  This optimization performs no recursion.
+eliminateZeroElems
+   :: (Expr -> Bool) -- ^Criterion for the node. E.g. "is a multiplication".
+   -> (Expr -> Bool) -- ^Criterion for the zero element. E.g. "is 0".
+   -> Expr
+   -> Expr
+eliminateZeroElems nodeF zeroF t@(binaryExpr -> Just (_,(l,r))) =
+   if nodeF t then
+      if zeroF l then l
+      else if zeroF r then r
+      else t
+   else t
+eliminateZeroElems nodeF zeroF t@(unaryExpr -> Just (_,n)) =
+   if nodeF t && zeroF n then n else t
+eliminateZeroElems _ _ t = t
 
 
 {-
