@@ -112,10 +112,12 @@ d v (f :* g) = (d v f :* g) :+ (f :* d v g)
 d v (f :/ g) = ((d v f :* g) :- (f :* d v g)) :/ (g :^ 2)
 -- power rule
 d _ (Var _) = 1
-d _ (Var x :^ Const a) = Const a :* (Var x :^ ((Const a) - 1))
+d v (Var x :^ a) | isConst v a = a :* (Var x :^ (a - 1))
 -- exponential rules
 d _ (Const Euler :^ Var x) = Const Euler :^ Var x
 d _ (Const a :^ Var x) = (Const a :^ Var x) :* Log (Const a)
+-- functional power rule
+d v (f :^ g) = (f :^ g) :* ((d v g :* Log f) :+ (g :* (d v f :/ f)))
 -- logarithmic rules
 d _ (Log (Var x)) = 1 :/ Var x
 -- trigonometric rules
@@ -126,14 +128,18 @@ d _ (Arcsin (Var x)) = 1 :/ ((1 :- (Var x :^ 2)) :^ (constR $ 1%2))
 d _ (Arccos (Var x)) = 0 :- (1 :/ ((1 :- (Var x :^ 2)) :^ (constR $ 1%2)))
 d _ (Arctan (Var x)) = 1 :/ (1 :+ (Var x :^ 2))
 -- chain rule
-d v f@(unaryExpr -> Just (_,g)) = f' :* d v g
+d v f@(unaryExpr -> Just (_,g)) = dExpr g f :* d v g
+
+-- |Derives against an expression @g@, not just against a variable name.
+--  For the purposes of derivation, @g@ will be temporarily replaced
+--  with a fresh variable @y@ and the expression will be derived against @y@.
+dExpr
+   :: Expr -- ^The expression against which to derive.
+   -> Expr
+   -> Expr
+dExpr g f = replace (Var gAlias) g $ d gAlias fAliased
    where
-      -- replace g with an alias in f.
-      -- then we derive f => f' w.r.t. to the alias
-      -- and lastly, we replace the alias with the original g
-      -- in f'.
       fAliased = replace g (Var gAlias) f
-      f' = replace (Var gAlias) g $ d gAlias fAliased
       gAlias = freshName f
 
 -- |Re-writes an expression according to the following rules:
@@ -252,8 +258,17 @@ a*x^r =
 
    0 * x^r     +      a * r * x^(r-1)
 
+
+x^x = (x^y) * 1
+    = x*x^(x-1)
+
+    = (y^x) * 1
+
+
 -}
 
 --make log into log with a base; special case with pattern synonym for natural log
 --log_a(x) = 1 / (x*ln(a))
+
+--chain rule for exponentiation (select the non-constant part, base or exponent)
 
