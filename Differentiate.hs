@@ -31,6 +31,61 @@ data Expr =
    | Arctan Expr
    deriving (Eq)
 
+infixl 4 :+
+infixl 4 :-
+infixl 5 :*
+infixl 5 :/
+infixl 6 :^
+
+-- Differentiation
+-------------------------------------------------------------------------------
+
+-- |Differentiate against a variable
+d :: VariableName -> Expr -> Expr
+-- constant rule
+d v a | isConst v a = 0
+-- sum rule
+d v (f :+ g) = d v f :+ d v g
+-- product rule
+d v (f :* g) = (d v f :* g) :+ (f :* d v g)
+-- quotient rule
+d v (f :/ g) = ((d v f :* g) :- (f :* d v g)) :/ (g :^ 2)
+-- power rule
+d _ (Var _) = 1
+d v (Var x :^ a) | isConst v a = a :* (Var x :^ (a - 1))
+-- exponential rules
+d _ (Const Euler :^ Var x) = Const Euler :^ Var x
+d _ (Const a :^ Var x) = Const a :^ Var x :* Log (Const a)
+-- functional power rule
+d v (f :^ g) = (f :^ g) :* (d v g :* Log f :+ g :* (d v f :/ f))
+-- logarithmic rules
+d _ (Log (Var x)) = 1 :/ Var x
+-- trigonometric rules
+d _ (Sin (Var x)) = Cos (Var x)
+d _ (Cos (Var x)) = 1 :- Sin (Var x)
+d _ (Tan (Var x)) = 1 :+ Tan (Var x) :^ 2
+d _ (Arcsin (Var x)) = 1 :/ ((1 :- Var x :^ 2) :^ (constR $ 1%2))
+d _ (Arccos (Var x)) = 0 :- (1 :/ ((1 :- Var x :^ 2) :^ (constR $ 1%2)))
+d _ (Arctan (Var x)) = 1 :/ (1 :+ Var x :^ 2)
+-- chain rule
+d v f@(unaryExpr -> Just (_,g)) = dExpr g f :* d v g
+
+-- |Derives against an expression @g@, not just against a variable name.
+--  For the purposes of derivation, @g@ will be temporarily replaced
+--  with a fresh variable @y@ and the expression will be derived against @y@.
+dExpr
+   :: Expr -- ^The expression against which to derive.
+   -> Expr
+   -> Expr
+dExpr g f = replace (Var gAlias) g $ d gAlias fAliased
+   where
+      fAliased = replace g (Var gAlias) f
+      gAlias = freshName f
+
+
+-- Helpers
+-------------------------------------------------------------------------------
+
 -- |Decomposes a unary operator into operator and operand.
 unaryExpr :: Expr -> Maybe (Expr -> Expr, Expr)
 unaryExpr (Log a) = Just (Log, a)
@@ -100,47 +155,9 @@ replace f r t | f == t = r
 replace f r (binaryExpr -> Just (t,(a,b))) = t (replace f r a) (replace f r b)
 replace f r (unaryExpr -> Just (t,t')) = t (replace f r t')
 
--- |Differentiate against a variable
-d :: VariableName -> Expr -> Expr
--- constant rule
-d v a | isConst v a = 0
--- sum rule
-d v (f :+ g) = d v f :+ d v g
--- product rule
-d v (f :* g) = (d v f :* g) :+ (f :* d v g)
--- quotient rule
-d v (f :/ g) = ((d v f :* g) :- (f :* d v g)) :/ (g :^ 2)
--- power rule
-d _ (Var _) = 1
-d v (Var x :^ a) | isConst v a = a :* (Var x :^ (a - 1))
--- exponential rules
-d _ (Const Euler :^ Var x) = Const Euler :^ Var x
-d _ (Const a :^ Var x) = (Const a :^ Var x) :* Log (Const a)
--- functional power rule
-d v (f :^ g) = (f :^ g) :* ((d v g :* Log f) :+ (g :* (d v f :/ f)))
--- logarithmic rules
-d _ (Log (Var x)) = 1 :/ Var x
--- trigonometric rules
-d _ (Sin (Var x)) = Cos (Var x)
-d _ (Cos (Var x)) = 1 :- Sin (Var x)
-d _ (Tan (Var x)) = 1 :+ (Tan (Var x) :^ 2)
-d _ (Arcsin (Var x)) = 1 :/ ((1 :- (Var x :^ 2)) :^ (constR $ 1%2))
-d _ (Arccos (Var x)) = 0 :- (1 :/ ((1 :- (Var x :^ 2)) :^ (constR $ 1%2)))
-d _ (Arctan (Var x)) = 1 :/ (1 :+ (Var x :^ 2))
--- chain rule
-d v f@(unaryExpr -> Just (_,g)) = dExpr g f :* d v g
 
--- |Derives against an expression @g@, not just against a variable name.
---  For the purposes of derivation, @g@ will be temporarily replaced
---  with a fresh variable @y@ and the expression will be derived against @y@.
-dExpr
-   :: Expr -- ^The expression against which to derive.
-   -> Expr
-   -> Expr
-dExpr g f = replace (Var gAlias) g $ d gAlias fAliased
-   where
-      fAliased = replace g (Var gAlias) f
-      gAlias = freshName f
+-- Optimizations
+-------------------------------------------------------------------------------
 
 -- |Re-writes an expression according to the following rules:
 --
@@ -229,46 +246,3 @@ eliminateZeroElems nodeF zeroF t@(binaryExpr -> Just (_,(l,r))) =
 eliminateZeroElems nodeF zeroF t@(unaryExpr -> Just (_,n)) =
    if nodeF t && zeroF n then n else t
 eliminateZeroElems _ _ t = t
-
-
-{-
-
-f(g(x)) = f'(g(x)) * g'(x)
-
-2^(x²) => f=2^[_]   =>  ^
-          g=x²         / \
-                      2   ^
-                         / \
-                        x   2
-
-
-x²^x   =>  ^
-          / \
-         ^   x
-        / \
-       x   2
-
-g(x)    = x²
-f(g(x)) = [ ]^x
-
-g'(x) = 2x
-f'(y) = (y^x)' = x*y^(x-1) = x*(x²^(x-1))
-
-a*x^r =
-
-   0 * x^r     +      a * r * x^(r-1)
-
-
-x^x = (x^y) * 1
-    = x*x^(x-1)
-
-    = (y^x) * 1
-
-
--}
-
---make log into log with a base; special case with pattern synonym for natural log
---log_a(x) = 1 / (x*ln(a))
-
---chain rule for exponentiation (select the non-constant part, base or exponent)
-
